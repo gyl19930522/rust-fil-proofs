@@ -1,5 +1,7 @@
 use std::convert::TryInto;
 use std::marker::PhantomData;
+use std::fs::File;
+use std::os::unix::fs::FileExt;
 
 #[cfg(target_arch = "x86")]
 use std::arch::x86::*;
@@ -25,11 +27,47 @@ use storage_proofs_core::{
     settings,
     util::NODE_SIZE,
 };
+use merkletree::store::DiskStore;
 
 /// The expansion degree used for Stacked Graphs.
 pub const EXP_DEGREE: usize = 8;
 
 const DEGREE: usize = BASE_DEGREE + EXP_DEGREE;
+
+// 20200608 add by gyl
+fn parent_disk_by_gyl<H, G>(
+    cache_entries: u32,
+    graph: &StackedGraph<H, G>,
+) -> Result<()>
+where
+    H: Hasher,
+    G: Graph<H> + ParameterSetMetadata + Send + Sync,
+{
+    static INSTANCE_512_MIB: OnceCell<ParentCache> = OnceCell::new();
+    static INSTANCE_32_GIB: OnceCell<ParentCache> = OnceCell::new();
+    static INSTANCE_64_GIB: OnceCell<ParentCache> = OnceCell::new();
+
+    const NODE_MIB: u32 = (1024 * 1024) / NODE_SIZE as u32;
+    const NODE_GIB: u32 = (1024 * 1024 * 1024) / NODE_SIZE as u32;
+    ensure!(
+        ((cache_entries == 512 * NODE_MIB) || (cache_entries == 32 * NODE_GIB) || (cache_entries == 64 * NODE_GIB)),
+        "Cache is only available for 512MiB, 32GiB and 64GiB sectors"
+    );
+    info!("using parent_cache[{}]", cache_entries);
+    if cache_entries == 512 * NODE_MIB {
+        Ok(INSTANCE_512_MIB.get_or_init(|| {
+            ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 512Mib cache")
+        }))
+    } else if cache_entries == 32 * NODE_GIB {
+        Ok(INSTANCE_32_GIB.get_or_init(|| {
+            ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 32GiB cache")
+        }))
+    } else {
+        Ok(INSTANCE_64_GIB.get_or_init(|| {
+            ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 64GiB cache")
+        }))
+    }
+}
 
 /// Returns a reference to the parent cache, initializing it lazily the first time this is called.
 fn parent_cache<H, G>(
@@ -101,6 +139,41 @@ impl ParentCache {
         })
     }
 
+    // 20200608 add by gyl
+    pub fn new_by_gyl<H, G>(cache_entries: u32, graph: &StackedGraph<H, G>) -> Result<()>
+    where
+        H: Hasher,
+        G: Graph<H> + ParameterSetMetadata + Send + Sync,
+    {
+        info!("filling parents cache");
+        let mut cache = vec![0u8; 4 * DEGREE * cache_entries as usize];
+
+        let base_degree = BASE_DEGREE;
+        let exp_degree = EXP_DEGREE;
+
+        cache
+            .par_chunks_mut(DEGREE * 4)
+            .enumerate()
+            .try_for_each(|(node, entry)| -> Result<()> {
+                graph
+                    .base_graph()
+                    .parents_by_gyl(node, &mut entry[..base_degree * 4])?;
+                graph.generate_expanded_parents_by_gyl(
+                    node,
+                    &mut entry[4 * base_degree..4 * (base_degree + exp_degree)],
+                );
+                Ok(())
+            })?;
+
+        info!("cache filled");
+        
+        let mut f = File::create("/home/parents_nodes.dat")?;
+        f.write_all_at(&cache, 0)?;
+        info!("parents file writed");
+
+        Ok(())
+    }
+
     /// Read a single cache element at position `node`.
     #[inline]
     pub fn read(&self, node: u32) -> &[u32] {
@@ -155,6 +228,26 @@ fn prefetch(parents: &[u32], data: &[u8]) {
     }
 }
 
+// 20200608 add by gyl
+#[inline]
+fn read_node_addr_by_gyl(i: usize, cache: &[u8], data: &[u8]) -> usize {
+    let start = u32::from_le_bytes(cache.try_into().unwrap()) as usize * NODE_SIZE;
+    let end = start + NODE_SIZE;
+
+    unsafe {
+        _mm_prefetch(data[start..end].as_ptr() as *const i8, _MM_HINT_T0);
+    }
+
+    data[start..end].as_ptr() as usize
+}
+
+// 20200609 add by gyl
+#[inline]
+fn read_exp_parent_from_disk<H: Hasher>(i: usize, cache: &[u8], data: &mut [u8], store: &DiskStore<H::Domain>) {
+    let start = u32::from_le_bytes(cache.try_into().unwrap()) as usize;
+    store.read_into(start, data);
+}
+
 #[inline]
 fn read_node<'a>(i: usize, parents: &[u32], data: &'a [u8]) -> &'a [u8] {
     let start = parents[i] as usize * NODE_SIZE;
@@ -162,11 +255,52 @@ fn read_node<'a>(i: usize, parents: &[u32], data: &'a [u8]) -> &'a [u8] {
     &data[start..end]
 }
 
+// 20200606 add by gyl
+pub fn load_parents_from_disk(
+    node: u32,
+    cache_parents: &mut [u8],
+    base_data: &[u8],
+    parents_addr: &mut [usize],
+    file: &File,
+) {
+    let start = node as usize * DEGREE * 4;
+    file.read_exact_at(cache_parents, start)?;
+
+    // fill base relationship, i = 0 ~ 6
+    for (i, cache) in cache_parents.chunks(4).enumerate() {
+        parents_addr[i] = read_node_addr_by_gyl(i, cache, base_data);
+    }
+}
+
+// 20200606 add by gyl
+pub fn load_parents_exp_from_disk<H: Hasher>(
+    node: u32,
+    cache_parents: &mut [u8],
+    base_data: &[u8],
+    exp_data: &mut [[u8; NODE_SIZE]],
+    parents_addr: &mut [usize],
+    file: &File,
+    store: &DiskStore<H::Domain>,
+) {
+    let start = node as usize * DEGREE * 4;
+    file.read_exact_at(cache_parents, start)?;
+
+    // fill all relationship, i = 0 ~ 14
+    for (i, cache) in cache_parents.chunks(4).enumerate() {
+        if i < 6 {
+            parents_addr[i] = read_node_addr_by_gyl(i, cache, base_data);
+        } else {
+            read_exp_parent_from_disk(i, cache_parents, &mut exp_data[i - 6], store);
+        }
+    }
+}
+
 impl<H, G> StackedGraph<H, G>
 where
     H: Hasher,
     G: Graph<H> + ParameterSetMetadata + Sync + Send,
 {
+    // 20200608 modified by gyl
     pub fn new(
         base_graph: Option<G>,
         nodes: usize,
@@ -178,7 +312,7 @@ where
         assert_eq!(expansion_degree, EXP_DEGREE);
         ensure!(nodes <= std::u32::MAX as usize, "too many nodes");
 
-        let use_cache = settings::SETTINGS.lock().unwrap().maximize_caching;
+        //let use_cache = settings::SETTINGS.lock().unwrap().maximize_caching;
 
         let base_graph = match base_graph {
             Some(graph) => graph,
@@ -206,12 +340,17 @@ where
             _h: PhantomData,
         };
 
+        /*
         if use_cache {
             info!("using parents cache of unlimited size");
 
             let cache = parent_cache(nodes as u32, &res)?;
             res.cache = Some(cache);
         }
+        */
+
+        info!("using parents disk storage");
+        parent_disk_by_gyl(nodes as u32, &res)?;
 
         Ok(res)
     }
@@ -443,6 +582,14 @@ where
         // Collapse the output in the matrix search space to the row of the corresponding
         // node (losing the column information, that will be regenerated later when calling
         // back this function in the `reversed` direction).
+    }
+
+    // 20200608 modified by gyl
+    fn generate_expanded_parents_by_gyl(&self, node: usize, expanded_parents: &mut [u8]) {
+        debug_assert_eq!(expanded_parents.len(), self.expansion_degree * 4);
+        for (i, el) in expanded_parents.chunks_mut(4).enumerate() {
+            el.copy_from_slice(&self.correspondent(node, i).to_le_bytes());
+        }
     }
 
     fn generate_expanded_parents(&self, node: usize, expanded_parents: &mut [u32]) {

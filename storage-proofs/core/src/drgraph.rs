@@ -45,6 +45,9 @@ pub trait Graph<H: Hasher>: ::std::fmt::Debug + Clone + PartialEq + Eq {
     /// reasons, so that the vector can be allocated outside this call.
     fn parents(&self, node: usize, parents: &mut [u32]) -> Result<()>;
 
+    /// 20200608 add by gyl
+    fn parents_by_gyl(&self, node: usize, parents: &mut [u8]) -> Result<()>;
+
     /// Returns the size of the graph (number of nodes).
     fn size(&self) -> usize;
 
@@ -180,6 +183,69 @@ impl<H: Hasher> Graph<H> for BucketGraph<H> {
                 }
 
                 parents[m_prime] = node - 1;
+                Ok(())
+            }
+        }
+    }
+
+    // 20200608 modified by gyl
+    #[inline]
+    fn parents_by_gyl(&self, node: usize, parents: &mut [u8]) -> Result<()> {
+        let m = self.degree();
+
+        match node {
+            // There are special cases for the first and second node: the first node self
+            // references, the second node only references the first node.
+            0 | 1 => {
+                // Use the degree of the current graph (`m`) as `parents.len()` might be bigger than
+                // that (that's the case for Stacked Graph).
+                for parent in parents.iter_mut().take(m * 4) {
+                    *parent = 0;
+                }
+                Ok(())
+            }
+            _ => {
+                // DRG node indexes are guaranteed to fit within a `u32`.
+                let node = node as u32;
+
+                let mut seed = [0u8; 32];
+                seed[..28].copy_from_slice(&self.seed);
+                seed[28..].copy_from_slice(&node.to_le_bytes());
+                let mut rng = ChaCha8Rng::from_seed(seed);
+
+                let m_prime = m - 1;
+                // Large sector sizes require that metagraph node indexes are `u64`.
+                let metagraph_node = node as u64 * m_prime as u64;
+                let n_buckets = (metagraph_node as f64).log2().ceil() as u64;
+
+                for parent_batch in parents.chunks_mut(4).take(m_prime) {
+                    let bucket_index = (rng.gen::<u64>() % n_buckets) + 1;
+                    let largest_distance_in_bucket = min(metagraph_node, 1 << bucket_index);
+                    let smallest_distance_in_bucket = max(2, largest_distance_in_bucket >> 1);
+
+                    // Add 1 becuase the number of distances in the bucket is inclusive.
+                    let n_distances_in_bucket =
+                        largest_distance_in_bucket - smallest_distance_in_bucket + 1;
+
+                    let distance =
+                        smallest_distance_in_bucket + (rng.gen::<u64>() % n_distances_in_bucket);
+
+                    let metagraph_parent = metagraph_node - distance;
+
+                    // Any metagraph node mapped onto the DRG can be safely cast back to `u32`.
+                    let mapped_parent = (metagraph_parent / m_prime as u64) as u32;
+
+                    let temp = if mapped_parent == node {
+                        node - 1
+                    } else {
+                        mapped_parent
+                    };
+
+                    parent_batch.copy_from_slice(&temp.to_le_bytes());
+                }
+
+                parents[m_prime * 4..m_prime * 4 + 4].copy_from_slice(&(node - 1).to_le_bytes());
+
                 Ok(())
             }
         }

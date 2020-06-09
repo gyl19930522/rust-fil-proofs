@@ -30,6 +30,8 @@ anyhow = "1.0.23"
 once_cell = "1.3.1"
 neptune = { version = "1.0.0", features = ["gpu"] }
 num_cpus = "1.10.1"
+parking_lot = "0.10.2"
+core_affinity = "0.5.10"
 
 [dev-dependencies]
 tempdir = "0.3.7"

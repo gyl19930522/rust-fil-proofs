@@ -3,6 +3,7 @@ use std::io::Write;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, RwLock};
+use parking_lot::Mutex;
 
 use generic_array::typenum::{self, Unsigned};
 use log::{info, trace};
@@ -32,7 +33,7 @@ use typenum::{U11, U2, U8};
 use super::{
     challenges::LayerChallenges,
     column::Column,
-    create_label, create_label_exp,
+    create_label, create_label_exp, dual_threads_layer_1_by_gyl, dual_threads_layer_n_by_gyl,
     graph::StackedBucketGraph,
     hash::hash_single_column,
     params::{
@@ -299,25 +300,17 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
 
         let layer_size = graph.size() * NODE_SIZE;
         // NOTE: this means we currently keep 2x sector size around, to improve speed.
-        let mut labels_buffer = vec![0u8; 2 * layer_size];
+        let layer_labels_ptr = Arc::new(Mutex::new(vec![0u8; layer_size]));
 
         for layer in 1..=layers {
-            info!("generating layer: {}", layer);
-
             if layer == 1 {
-                let layer_labels = &mut labels_buffer[..layer_size];
-                for node in 0..graph.size() {
-                    create_label(graph, replica_id, layer_labels, layer, node)?;
-                }
+                dual_threads_layer_1_by_gyl(graph.size(), replica_id, &layer_labels_ptr);
             } else {
-                let (layer_labels, exp_labels) = labels_buffer.split_at_mut(layer_size);
-                for node in 0..graph.size() {
-                    create_label_exp(graph, replica_id, exp_labels, layer_labels, layer, node)?;
-                }
+                dual_threads_layer_n_by_gyl(layer, layers, graph.size(), replica_id, &layer_labels_ptr, &labels[layer - 1]);
             }
 
             info!("  setting exp parents");
-            labels_buffer.copy_within(..layer_size, layer_size);
+            //labels_buffer.copy_within(..layer_size, layer_size);
 
             // Write the result to disk to avoid keeping it in memory all the time.
             let layer_config =
@@ -329,7 +322,7 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
                 DiskStore::new_from_slice_with_config(
                     graph.size(),
                     Tree::Arity::to_usize(),
-                    &labels_buffer[..layer_size],
+                    layer_labels_ptr.as_ref(),
                     layer_config.clone(),
                 )?;
             info!(

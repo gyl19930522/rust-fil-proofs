@@ -27,6 +27,12 @@ impl Sha256 {
         Sha256::default()
     }
 
+    // 20200608 add by gyl
+    pub fn reset(&mut self) {
+        self.len = 0;
+        self.state.copy_from_slice(&H256);
+    }
+
     pub fn digest(blocks: &[&[u8]]) -> [u8; 32] {
         let mut sha = Sha256::new();
         sha.input(blocks);
@@ -39,6 +45,22 @@ impl Sha256 {
         self.len += (blocks.len() as u64) << 8;
 
         IMPL.compress256(&mut self.state, blocks);
+    }
+
+    // 20200606 add by gyl
+    pub fn finish_into_by_gyl(mut self, out: &mut[u8]) {
+        let mut block0 = [0u8; 32];
+        let mut block1 = [0u8; 32];
+
+        // Append single 1 bit
+        block0[0] = 0b1000_0000;
+
+        // Write L as 64 big endian integer
+        let l = self.len;
+        block1[32 - 8..].copy_from_slice(&l.to_be_bytes()[..]);
+
+        IMPL.compress256(&mut self.state, &[&block0[..], &block1[..]][..]);
+        BE::write_u32_into(&self.state, out);
     }
 
     pub fn finish(mut self) -> [u8; 32] {
@@ -57,6 +79,23 @@ impl Sha256 {
         let mut out = [0u8; 32];
         BE::write_u32_into(&self.state, &mut out);
         out
+    }
+
+    // 20200606 add by gyl
+    pub fn finish_with_into_by_gyl(mut self, block0: &[u8], out: &mut[u8]) {
+        debug_assert_eq!(block0.len(), 32);
+
+        let mut block1 = [0u8; 32];
+
+        // Append single 1 bit
+        block1[0] = 0b1000_0000;
+
+        // Write L as 64 big endian integer
+        let l = self.len + 256;
+        block1[32 - 8..].copy_from_slice(&l.to_be_bytes()[..]);
+
+        IMPL.compress256(&mut self.state, &[block0, &block1[..]][..]);
+        BE::write_u32_into(&self.state, out);
     }
 
     pub fn finish_with(mut self, block0: &[u8]) -> [u8; 32] {

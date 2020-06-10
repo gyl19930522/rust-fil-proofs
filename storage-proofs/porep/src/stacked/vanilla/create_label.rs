@@ -22,15 +22,14 @@ use log::info;
 use super::graph::{StackedBucketGraph, 
     load_index_from_disk, load_all_from_disk, finish_parents_labels, finish_exp_parents_labels, U32SIZE};
 
-pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
+pub fn dual_threads_layer_1_by_gyl<H: 'static + Hasher>(
     g_size: usize,
     replica_id: &H::Domain,
     layer_labels_ptr: &Arc<Mutex<Vec<u8>>>,
 ) {
     info!("generating layer: 1");
 
-    let rep_id = replica_id.clone();
-    let replica_id_ptr = Arc::new(rep_id);
+    let replica_id_ptr = Arc::new(replica_id.clone());
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
@@ -130,7 +129,7 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
     t2.join().ok();
 }
 
-pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
+pub fn dual_threads_layer_n_by_gyl<H: 'static + Hasher>(
     layer: usize,
     layers: usize,
     g_size: usize,
@@ -140,9 +139,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
 ) {
     info!("generating layer: {}", layer);
 
-    let rep_id = replica_id.clone();
-    let replica_id_ptr = Arc::new(rep_id);
-    let data_path_ptr = Arc::new(data_path.clone());
+    let replica_id_ptr = Arc::new(replica_id.clone());
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
@@ -228,7 +225,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
         let mut exp_labels_local = exp_labels_ptr_2.lock();
 
         let file_index = File::open("/home/parents_index.dat").unwrap();
-        let file_last_layer = File::open(data_path_ptr.as_ref()).unwrap();
+        let file_last_layer = File::open(data_path).unwrap();
 
         let mut index_cache = [0u8; 14 * U32SIZE];
 

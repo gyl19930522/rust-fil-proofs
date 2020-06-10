@@ -305,10 +305,10 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
 
         for layer in 1..=layers {
             if layer == 1 {
-                dual_threads_layer_1_by_gyl(graph.size(), replica_id, &layer_labels_ptr);
+                dual_threads_layer_1_by_gyl<Tree::Hasher>(graph.size(), replica_id, &layer_labels_ptr);
             } else {
                 let data_path = StoreConfig::data_path(&label_configs[layer - 1].path, &label_configs[layer - 1].id);
-                dual_threads_layer_n_by_gyl(layer, layers, graph.size(), replica_id, &layer_labels_ptr, &data_path);
+                dual_threads_layer_n_by_gyl<Tree::Hasher>(layer, layers, graph.size(), replica_id, &layer_labels_ptr, &data_path);
             }
 
             info!("  setting exp parents");

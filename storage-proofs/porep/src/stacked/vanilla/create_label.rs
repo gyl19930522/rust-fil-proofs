@@ -207,7 +207,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
 
         for node in 0..g_size {
             while finish_node_2.load(Ordering::SeqCst) < node as isize {};
-            load_parents_exp_from_disk(
+            load_parents_exp_from_disk::<H>(
                 min(node + 1, g_size - 1), 
                 &mut cache_all_parents,
                 layer_labels_local.as_ref(),

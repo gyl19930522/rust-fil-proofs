@@ -287,7 +287,7 @@ pub fn load_parents_exp_from_disk<H: Hasher>(
         if i < 6 {
             parents_addr[i] = read_node_addr_by_gyl(i, cache, base_data);
         } else {
-            read_exp_parent_from_disk(i, cache_parents, &mut exp_data[i - 6], store);
+            read_exp_parent_from_disk::<H>(i, cache_parents, &mut exp_data[i - 6], store);
         }
     }
 }

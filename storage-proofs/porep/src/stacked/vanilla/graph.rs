@@ -256,13 +256,13 @@ fn read_node<'a>(i: usize, parents: &[u32], data: &'a [u8]) -> &'a [u8] {
 
 // 20200606 add by gyl
 pub fn load_parents_from_disk(
-    node: u32,
+    node: usize,
     cache_parents: &mut [u8],
     base_data: &[u8],
     parents_addr: &mut [usize],
     file: &File,
 ) {
-    let start = node as usize * DEGREE * 4;
+    let start = node * DEGREE * 4;
     file.read_exact_at(cache_parents, start as u64).unwrap();
 
     // fill base relationship, i = 0 ~ 6

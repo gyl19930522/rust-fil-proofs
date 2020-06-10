@@ -65,7 +65,7 @@ pub fn dual_threads_layer_1_by_gyl<H: 'static + Hasher>(
                 finish_parents_labels(
                     parent_index_local.as_ref(), 
                     layer_labels_local.as_mut(), 
-                    &mut hasher,
+                    hasher,
                 )
                 /*
                 unsafe {
@@ -178,7 +178,7 @@ pub fn dual_threads_layer_n_by_gyl<H: 'static + Hasher>(
                     parent_index_local.as_ref(), 
                     layer_labels_local.as_mut(),
                     exp_labels_local.as_ref(),
-                    &mut hasher,
+                    hasher,
                 )
                 /*
                 unsafe {
@@ -213,7 +213,7 @@ pub fn dual_threads_layer_n_by_gyl<H: 'static + Hasher>(
             layer_labels_local[start..end].copy_from_slice(&hash[..]);
             // strip last two bits, to ensure result is in Fr.
             layer_labels_local[end - 1] &= 0b0011_1111;
-            
+
             finish_node_1.store(node as isize, Ordering::SeqCst);
         }
     });

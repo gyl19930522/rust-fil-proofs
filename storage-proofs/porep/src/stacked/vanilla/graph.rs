@@ -326,7 +326,7 @@ fn read_exp_node_by_gyl<'a>(i: usize, data: &'a [u8]) -> &'a [u8] {
 pub fn finish_parents_labels(
     parents_index: &[u32], 
     data: &mut [u8], 
-    hasher: &mut Sha256,
+    mut hasher: Sha256,
 ) -> [u8; 32] {
     let parents = [
         read_node_by_gyl(0, parents_index, data),
@@ -352,7 +352,7 @@ pub fn finish_exp_parents_labels(
     parents_index: &[u32], 
     labels: &mut [u8], 
     exp_labels: &[u8], 
-    hasher: &mut Sha256,
+    mut hasher: Sha256,
 ) -> [u8; 32] {
     let parents = [
         read_node_by_gyl(0, parents_index, labels),
@@ -452,7 +452,7 @@ where
         feistel_keys[2] = u64::from_le_bytes(raw_seed[16..24].try_into().unwrap());
         feistel_keys[3] = u64::from_le_bytes(raw_seed[24..32].try_into().unwrap());
 
-        let mut res = StackedGraph {
+        let res = StackedGraph {
             base_graph,
             id: format!(
                 "stacked_graph::StackedGraph{{expansion_degree: {} base_graph: {} }}",

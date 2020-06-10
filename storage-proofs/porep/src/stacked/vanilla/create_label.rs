@@ -120,7 +120,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
     g_size: usize,
     replica_id: &H::Domain,
     layer_labels_ptr: &Arc<Mutex<Vec<u8>>>,
-    store: &DiskStore<H::Domain>,
+    store: &'static DiskStore<H::Domain>,
 ) {
     info!("generating layer: {}", layer);
 

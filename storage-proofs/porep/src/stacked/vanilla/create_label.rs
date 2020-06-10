@@ -107,7 +107,7 @@ pub fn dual_threads_layer_1_by_gyl<H: 'static + Hasher>(
         let layer_labels_local = layer_labels_ptr_2.lock();
         let mut parent_index_local = parent_index_ptr_2.lock();
 
-        let file_index = File::open("/home/dianduidian/parents_nodes.dat").unwrap();
+        let file_index = File::open("parents_nodes.dat").unwrap();
         let mut index_cache = [0u8; 6 * U32SIZE];
 
         for node in 0..g_size {

@@ -167,7 +167,7 @@ impl ParentCache {
 
         info!("cache filled");
         
-        let file = File::create("/home/parents_nodes.dat")?;
+        let file = File::create("parents_nodes.dat")?;
         file.write_all_at(&cache, 0)?;
         info!("parents file writed");
 

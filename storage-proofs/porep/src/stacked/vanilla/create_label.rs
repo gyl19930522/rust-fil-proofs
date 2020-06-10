@@ -16,6 +16,7 @@ use storage_proofs_core::{
     hasher::Hasher,
     util::{data_at_node_offset, NODE_SIZE},
 };
+use log::info;
 
 use super::graph::{StackedBucketGraph, load_parents_from_disk, load_parents_exp_from_disk};
 

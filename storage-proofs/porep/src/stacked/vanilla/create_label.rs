@@ -7,10 +7,11 @@ use core_affinity;
 use std::sync::{Arc, atomic::{AtomicUsize, AtomicIsize, Ordering}};
 use std::thread;
 use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::cmp::min;
 use sha2raw::Sha256;
 use parking_lot::Mutex;
-use merkletree::store::DiskStore;
+
 use storage_proofs_core::{
     error::Result,
     hasher::Hasher,
@@ -18,7 +19,8 @@ use storage_proofs_core::{
 };
 use log::info;
 
-use super::graph::{StackedBucketGraph, load_parents_from_disk, load_parents_exp_from_disk};
+use super::graph::{StackedBucketGraph, 
+    load_index_from_disk, load_all_from_disk, finish_parents_labels, finish_exp_parents_labels, U32SIZE};
 
 pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
     g_size: usize,
@@ -31,10 +33,12 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
-    let layer_labels_ptr_3 = layer_labels_ptr_2.clone();
 
-    let base_parents_addr_1 = Arc::new(Mutex::new([0usize; 6]));
-    let base_parents_addr_2 = base_parents_addr_1.clone();
+    let parent_index_ptr_1 = Arc::new(Mutex::new([0u32; 6]));
+    let parent_index_ptr_2 = parent_index_ptr_1.clone();
+
+    // let base_parents_addr_1 = Arc::new(Mutex::new([0usize; 6]));
+    // let base_parents_addr_2 = base_parents_addr_1.clone();
 
     // sync atom
     let pending_node_1 = Arc::new(AtomicUsize::new(1));
@@ -47,21 +51,28 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() - 1});
 
         let mut layer_labels_local = layer_labels_ptr_1.lock();
-        let base_parents_addr_local = base_parents_addr_1.lock();
+        let parent_index_local = parent_index_ptr_1.lock();
 
         let mut hasher = Sha256::new();
 
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
+
             hasher.reset();
             let mut buffer = [0u8; 32];
             buffer[..4].copy_from_slice(&1u32.to_be_bytes());
             hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]]);
 
             let start = node * NODE_SIZE;
-            let end = start + NODE_SIZE;
 
             if node > 0 {
+                finish_parents_labels(
+                    start, 
+                    parent_index_local.as_ref(), 
+                    layer_labels_local.as_mut(), 
+                    &mut hasher,
+                );
+                /*
                 unsafe {
                     let ps = [
                         std::slice::from_raw_parts(base_parents_addr_local[0] as *const u8, NODE_SIZE),
@@ -78,12 +89,13 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
                     hasher.input(&ps);
                     hasher.input(&ps);
                     hasher.finish_with_into_by_gyl(ps[0], layer_labels_local[start..end].as_mut());
-                }                  
+                }  
+                */                
             } else {
                 hasher.finish_into_by_gyl(layer_labels_local[0..NODE_SIZE].as_mut());
             }
 
-            layer_labels_local[end - 1] &= 0b0011_1111;
+            layer_labels_local[start + NODE_SIZE - 1] &= 0b0011_1111;
             finish_node_1.store(node as isize, Ordering::SeqCst);
         }
     });
@@ -91,19 +103,22 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
     // thread for loading data
     let t2 = thread::spawn(move || {
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() / 2 - 1});
+        
         let layer_labels_local = layer_labels_ptr_2.lock();
-        let mut base_parents_addr_local = base_parents_addr_2.lock();
-        let file = File::open("/home/parents_nodes.dat").unwrap();
-        let mut cache_parents = [0u8; 6 * 4];
+        let mut parent_index_local = parent_index_ptr_2.lock();
+
+        let file_index = File::open("/home/parents_index.dat").unwrap();
+        let mut index_cache = [0u8; 6 * U32SIZE];
 
         for node in 0..g_size {
             while finish_node_2.load(Ordering::SeqCst) < node as isize {};
-            load_parents_from_disk(
+
+            load_index_from_disk(
                 min(node + 1, g_size - 1), 
-                &mut cache_parents,
+                &mut index_cache,
+                parent_index_local.as_mut(),
                 layer_labels_local.as_ref(), 
-                base_parents_addr_local.as_mut(), 
-                &file
+                &file_index,
             );
             
             pending_node_2.store(node + 1, Ordering::SeqCst);
@@ -120,7 +135,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
     g_size: usize,
     replica_id: &H::Domain,
     layer_labels_ptr: &Arc<Mutex<Vec<u8>>>,
-    store: &'static DiskStore<H::Domain>,
+    data_path: &PathBuf,
 ) {
     info!("generating layer: {}", layer);
 
@@ -128,15 +143,11 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
-    let layer_labels_ptr_3 = layer_labels_ptr_2.clone();
 
-    let store_ptr = Arc::new(store.clone());
+    let parent_index_ptr_1 = Arc::new(Mutex::new([0u32; 6]));
+    let parent_index_ptr_2 = parent_index_ptr_1.clone();
 
-    let base_parents_addr_1 = Arc::new(Mutex::new([0usize; 6]));
-    let base_parents_addr_2 = base_parents_addr_1.clone();
-
-    // store exp parentship
-    let exp_labels_ptr_1 = Arc::new(Mutex::new([[0u8; NODE_SIZE]; 8]));
+    let exp_labels_ptr_1 = Arc::new(Mutex::new([0u8; 8 * NODE_SIZE]));
     let exp_labels_ptr_2 = exp_labels_ptr_1.clone();
 
     // sync atom
@@ -147,24 +158,33 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
 
     let t1 = thread::spawn(move || {
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() - 1});
-        let mut hasher = Sha256::new();
 
         let mut layer_labels_local = layer_labels_ptr_1.lock();
-        let base_parents_addr_local = base_parents_addr_1.lock();
+        let parent_index_local = parent_index_ptr_1.lock();
         let exp_labels_local = exp_labels_ptr_1.lock();
+
+        let mut hasher = Sha256::new();
         
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
+
+            let start = node * NODE_SIZE;
+
             hasher.reset();
             let mut buffer = [0u8; 32];
-            // copy once is ok
             buffer[..4].copy_from_slice(&(layer as u32).to_be_bytes());
             buffer[4..12].copy_from_slice(&(node as u64).to_be_bytes());
             hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]][..]);
-            let start = node * NODE_SIZE;
-            let end = start + NODE_SIZE;
 
             if node > 0 {
+                finish_exp_parents_labels(
+                    start,
+                    parent_index_local.as_ref(), 
+                    layer_labels_local.as_mut(),
+                    exp_labels_local.as_ref(),
+                    &mut hasher,
+                );
+                /*
                 unsafe {
                     let ps = [
                         std::slice::from_raw_parts(base_parents_addr_local[0] as *const u8, NODE_SIZE),
@@ -187,35 +207,39 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
                     hasher.input(&ps[..8]);
                     hasher.finish_with_into_by_gyl(ps[8], layer_labels_local[start..end].as_mut());
                 }
+                */
             } else {
                 hasher.finish_into_by_gyl(layer_labels_local[0..NODE_SIZE].as_mut());
             }
 
-            layer_labels_local[end - 1] &= 0b0011_1111;
+            layer_labels_local[start + NODE_SIZE - 1] &= 0b0011_1111;
             finish_node_1.store(node as isize, Ordering::SeqCst);
         }
     });
 
     let t2 = thread::spawn(move || {
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() / 2 - 1});
+
         let layer_labels_local = layer_labels_ptr_2.lock();
-        let mut base_parents_addr_local = base_parents_addr_2.lock();
+        let mut parent_index_local = parent_index_ptr_2.lock();
         let mut exp_labels_local = exp_labels_ptr_2.lock();
 
-        let relation_file = File::open("/home/parents_nodes.dat").unwrap();
+        let file_index = File::open("/home/parents_index.dat").unwrap();
+        let file_last_layer = File::open(data_path).unwrap();
 
-        let mut cache_all_parents = [0u8; 14 * 4];
+        let mut index_cache = [0u8; 14 * U32SIZE];
 
         for node in 0..g_size {
             while finish_node_2.load(Ordering::SeqCst) < node as isize {};
-            load_parents_exp_from_disk::<H>(
+
+            load_all_from_disk(
                 min(node + 1, g_size - 1), 
-                &mut cache_all_parents,
-                layer_labels_local.as_ref(),
+                &mut index_cache,
+                parent_index_local.as_mut(),
                 exp_labels_local.as_mut(),
-                base_parents_addr_local.as_mut(),
-                &relation_file,
-                store_ptr.as_ref(),
+                layer_labels_local.as_ref(),
+                &file_index,
+                &file_last_layer,
             );
 
             pending_node_2.store(node + 1, Ordering::SeqCst);

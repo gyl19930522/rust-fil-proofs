@@ -27,12 +27,13 @@ use storage_proofs_core::{
     settings,
     util::NODE_SIZE,
 };
-use merkletree::store::{Store, DiskStore};
 
 /// The expansion degree used for Stacked Graphs.
 pub const EXP_DEGREE: usize = 8;
 
 const DEGREE: usize = BASE_DEGREE + EXP_DEGREE;
+
+pub const U32SIZE: usize = 4;
 
 // 20200608 add by gyl
 fn parent_disk_by_gyl<H, G>(
@@ -225,6 +226,7 @@ fn prefetch(parents: &[u32], data: &[u8]) {
     }
 }
 
+/*
 // 20200608 add by gyl
 #[inline]
 fn read_node_addr_by_gyl(i: usize, cache: &[u8], data: &[u8]) -> usize {
@@ -240,10 +242,11 @@ fn read_node_addr_by_gyl(i: usize, cache: &[u8], data: &[u8]) -> usize {
 
 // 20200609 add by gyl
 #[inline]
-fn read_exp_parent_from_disk<H: Hasher>(i: usize, cache: &[u8], data: &mut [u8], store: &DiskStore<H::Domain>) {
-    let start = u32::from_le_bytes(cache.try_into().unwrap()) as usize;
-    store.read_into(start, data);
+fn read_exp_parent_from_disk(i: usize, cache: &[u8], data: &mut [u8], file: &File) {
+    let start = u32::from_le_bytes(cache.try_into().unwrap()) as usize * NODE_SIZE;
+    file.read_exact_at(data, start).unwrap();
 }
+*/
 
 #[inline]
 fn read_node<'a>(i: usize, parents: &[u32], data: &'a [u8]) -> &'a [u8] {
@@ -252,6 +255,130 @@ fn read_node<'a>(i: usize, parents: &[u32], data: &'a [u8]) -> &'a [u8] {
     &data[start..end]
 }
 
+// 20200610 add by gyl
+pub fn load_index_from_disk(
+    node: usize,
+    cache: &mut [u8],
+    parents_index: &mut [u32],
+    base_data: &[u8],
+    file: &File,
+) {
+    let start = node * DEGREE * U32SIZE;
+    file.read_exact_at(cache, start as u64).unwrap();
+
+    for (i, idx) in cache.chunks(U32SIZE).enumerate() {
+        parents_index[i] = u32::from_le_bytes(idx.try_into().unwrap());
+    }
+}
+
+// 20200610 add by gyl
+pub fn load_all_from_disk(
+    node: usize,
+    cache: &mut [u8],
+    parents_index: &mut [u32],
+    exp_labels: &mut [u8],
+    base_data: &[u8],
+    file_index: &File,
+    file_last_layer: &File,
+) {
+    let start = node * DEGREE * U32SIZE;
+    file_index.read_exact_at(cache, start as u64).unwrap();
+
+    for (i, idx) in cache.chunks(U32SIZE).enumerate() {
+        if i < 6 {
+            parents_index[i] = u32::from_le_bytes(idx.try_into().unwrap());
+        } else {
+            let start = (i - BASE_DEGREE) * NODE_SIZE;
+            let end = start + NODE_SIZE;
+            let index = u32::from_le_bytes(idx.try_into().unwrap()) as usize * NODE_SIZE;
+            file_last_layer.read_exact_at(exp_labels[start..end].as_mut(), index as u64);
+        }
+    }
+}
+
+// 20200610 add by gyl
+#[inline]
+fn read_node_by_gyl<'a>(i: usize, parents_index: &[u32], data: &'a [u8]) -> &'a [u8] {
+    let start = parents_index[i] as usize;
+    let end = start + NODE_SIZE;
+
+    unsafe {
+        _mm_prefetch(data[start..end].as_ptr() as *const i8, _MM_HINT_T0);
+    }
+
+    &data[start..end]
+}
+
+// 20200610 add by gyl
+#[inline]
+fn read_exp_node_by_gyl<'a>(i: usize, data: &'a [u8]) -> &'a [u8] {
+
+    unsafe {
+        _mm_prefetch(data[i..i + NODE_SIZE].as_ptr() as *const i8, _MM_HINT_T0);
+    }
+
+    &data[i..i + NODE_SIZE]
+}
+
+// 20200610 add by gyl
+pub fn finish_parents_labels(
+    start: usize,
+    parents_index: &[u32], 
+    data: &mut [u8], 
+    hasher: &mut Sha256,
+) {
+    let parents = [
+        read_node_by_gyl(0, parents_index, data),
+        read_node_by_gyl(1, parents_index, data),
+        read_node_by_gyl(2, parents_index, data),
+        read_node_by_gyl(3, parents_index, data),
+        read_node_by_gyl(4, parents_index, data),
+        read_node_by_gyl(5, parents_index, data),
+    ];
+
+    hasher.input(&parents);
+    hasher.input(&parents);
+    hasher.input(&parents);
+    hasher.input(&parents);
+    hasher.input(&parents);
+    hasher.input(&parents);
+
+    hasher.finish_with_into_by_gyl(parents[0], data[start..start + NODE_SIZE].as_mut());
+}
+
+// 20200610 add by gyl
+pub fn finish_exp_parents_labels(
+    start: usize, 
+    parents_index: &[u32], 
+    labels: &mut [u8], 
+    exp_labels: &[u8], 
+    hasher: &mut Sha256,
+) {
+    let parents = [
+        read_node_by_gyl(0, parents_index, labels),
+        read_node_by_gyl(1, parents_index, labels),
+        read_node_by_gyl(2, parents_index, labels),
+        read_node_by_gyl(3, parents_index, labels),
+        read_node_by_gyl(4, parents_index, labels),
+        read_node_by_gyl(5, parents_index, labels),
+        read_exp_node_by_gyl(0, exp_labels),
+        read_exp_node_by_gyl(1, exp_labels),
+        read_exp_node_by_gyl(2, exp_labels),
+        read_exp_node_by_gyl(3, exp_labels),
+        read_exp_node_by_gyl(4, exp_labels),
+        read_exp_node_by_gyl(5, exp_labels),
+        read_exp_node_by_gyl(6, exp_labels),
+        read_exp_node_by_gyl(7, exp_labels),
+    ];
+
+    hasher.input(&parents);
+    hasher.input(&parents);
+    hasher.input(&parents[..8]);
+
+    hasher.finish_with_into_by_gyl(&parents[8], data[start..start + NODE_SIZE].as_mut());
+}
+
+/*
 // 20200606 add by gyl
 pub fn load_parents_from_disk(
     node: usize,
@@ -270,14 +397,14 @@ pub fn load_parents_from_disk(
 }
 
 // 20200606 add by gyl
-pub fn load_parents_exp_from_disk<H: Hasher>(
+pub fn load_parents_exp_from_disk(
     node: usize,
     cache_parents: &mut [u8],
     base_data: &[u8],
     exp_data: &mut [[u8; NODE_SIZE]],
     parents_addr: &mut [usize],
     file: &File,
-    store: &DiskStore<H::Domain>,
+    file2: &File,
 ) {
     let start = node * DEGREE * 4;
     file.read_exact_at(cache_parents, start as u64).unwrap();
@@ -287,10 +414,11 @@ pub fn load_parents_exp_from_disk<H: Hasher>(
         if i < 6 {
             parents_addr[i] = read_node_addr_by_gyl(i, cache, base_data);
         } else {
-            read_exp_parent_from_disk::<H>(i, cache_parents, &mut exp_data[i - 6], store);
+            read_exp_parent_from_disk(i, cache_parents, &mut exp_data[i - 6], store);
         }
     }
 }
+*/
 
 impl<H, G> StackedGraph<H, G>
 where

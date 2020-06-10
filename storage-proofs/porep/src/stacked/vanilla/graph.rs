@@ -27,7 +27,7 @@ use storage_proofs_core::{
     settings,
     util::NODE_SIZE,
 };
-use merkletree::store::DiskStore;
+use merkletree::store::{Store, DiskStore};
 
 /// The expansion degree used for Stacked Graphs.
 pub const EXP_DEGREE: usize = 8;
@@ -38,7 +38,7 @@ const DEGREE: usize = BASE_DEGREE + EXP_DEGREE;
 fn parent_disk_by_gyl<H, G>(
     cache_entries: u32,
     graph: &StackedGraph<H, G>,
-) -> Result<()>
+)
 where
     H: Hasher,
     G: Graph<H> + ParameterSetMetadata + Send + Sync,
@@ -56,14 +56,12 @@ where
     info!("using parent_cache[{}]", cache_entries);
 
     if cache_entries == 512 * NODE_MIB {
-        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 512Mib cache")?;
+        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 512Mib cache");
     } else if cache_entries == 32 * NODE_GIB {
-        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 32GiB cache")?;
+        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 32GiB cache");
     } else {
-        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 64GiB cache")?;
+        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 64GiB cache");
     }
-
-    Ok(())
 }
 
 /// Returns a reference to the parent cache, initializing it lazily the first time this is called.

@@ -11,7 +11,6 @@ use std::cmp::min;
 use sha2raw::Sha256;
 use parking_lot::Mutex;
 use merkletree::store::DiskStore;
-use sha2raw::Sha256;
 use storage_proofs_core::{
     error::Result,
     hasher::Hasher,
@@ -45,20 +44,19 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
     // thread for sha256
     let t1 = thread::spawn(move || {
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() - 1});
-        let mut buffer = [0u8; 32];
-        // copy once is ok
-        buffer[..4].copy_from_slice(&1u32.to_be_bytes());
-        let mut target = [AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]][..];
-        let mut hasher = Sha256::new();
 
         let mut layer_labels_local = layer_labels_ptr_1.lock();
         let base_parents_addr_local = base_parents_addr_1.lock();
 
+        let mut hasher = Sha256::new();
+
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
             hasher.reset();
-            buffer[4..12].copy_from_slice(&(node as u64).to_be_bytes());
-            hasher.input(&target);
+            let mut buffer = [0u8; 32];
+            buffer[..4].copy_from_slice(&1u32.to_be_bytes());
+            hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]]);
+
             let start = node * NODE_SIZE;
             let end = start + NODE_SIZE;
 
@@ -94,7 +92,7 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() / 2 - 1});
         let layer_labels_local = layer_labels_ptr_2.lock();
         let mut base_parents_addr_local = base_parents_addr_2.lock();
-        let file = File::open("/home/parents_nodes.dat")?;
+        let file = File::open("/home/parents_nodes.dat").unwrap();
         let mut cache_parents = [0u8; 6 * 4];
 
         for node in 0..g_size {
@@ -148,10 +146,6 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
 
     let t1 = thread::spawn(move || {
         core_affinity::set_for_current(core_affinity::CoreId{id: num_cpus::get() - 1});
-        let mut buffer = [0u8; 32];
-        // copy once is ok
-        buffer[..4].copy_from_slice(&(layer as u32).to_be_bytes());
-        let mut target = [AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]][..];
         let mut hasher = Sha256::new();
 
         let mut layer_labels_local = layer_labels_ptr_1.lock();
@@ -161,8 +155,11 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
             hasher.reset();
+            let mut buffer = [0u8; 32];
+            // copy once is ok
+            buffer[..4].copy_from_slice(&(layer as u32).to_be_bytes());
             buffer[4..12].copy_from_slice(&(node as u64).to_be_bytes());
-            hasher.input(&target);
+            hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]][..]);
             let start = node * NODE_SIZE;
             let end = start + NODE_SIZE;
 
@@ -204,7 +201,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
         let mut base_parents_addr_local = base_parents_addr_2.lock();
         let mut exp_labels_local = exp_labels_ptr_2.lock();
 
-        let relation_file = File::open("/home/parents_nodes.dat")?;
+        let relation_file = File::open("/home/parents_nodes.dat").unwrap();
 
         let mut cache_all_parents = [0u8; 14 * 4];
 

@@ -54,19 +54,16 @@ where
         "Cache is only available for 512MiB, 32GiB and 64GiB sectors"
     );
     info!("using parent_cache[{}]", cache_entries);
+
     if cache_entries == 512 * NODE_MIB {
-        Ok(INSTANCE_512_MIB.get_or_init(|| {
-            ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 512Mib cache")
-        }))
+        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 512Mib cache")?;
     } else if cache_entries == 32 * NODE_GIB {
-        Ok(INSTANCE_32_GIB.get_or_init(|| {
-            ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 32GiB cache")
-        }))
+        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 32GiB cache")?;
     } else {
-        Ok(INSTANCE_64_GIB.get_or_init(|| {
-            ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 64GiB cache")
-        }))
+        ParentCache::new_by_gyl(cache_entries, graph).expect("failed to fill 64GiB cache")?;
     }
+
+    Ok(())
 }
 
 /// Returns a reference to the parent cache, initializing it lazily the first time this is called.
@@ -157,11 +154,13 @@ impl ParentCache {
             .try_for_each(|(node, entry)| -> Result<()> {
                 graph
                     .base_graph()
-                    .parents_by_gyl(node, &mut entry[..base_degree * 4])?;
+                    .parents_by_gyl(node, entry)?;
+                /*
                 graph.generate_expanded_parents_by_gyl(
                     node,
                     &mut entry[4 * base_degree..4 * (base_degree + exp_degree)],
                 );
+                */
                 Ok(())
             })?;
 
@@ -264,7 +263,7 @@ pub fn load_parents_from_disk(
     file: &File,
 ) {
     let start = node as usize * DEGREE * 4;
-    file.read_exact_at(cache_parents, start)?;
+    file.read_exact_at(cache_parents, start as u64).unwrap();
 
     // fill base relationship, i = 0 ~ 6
     for (i, cache) in cache_parents.chunks(4).enumerate() {
@@ -274,7 +273,7 @@ pub fn load_parents_from_disk(
 
 // 20200606 add by gyl
 pub fn load_parents_exp_from_disk<H: Hasher>(
-    node: u32,
+    node: usize,
     cache_parents: &mut [u8],
     base_data: &[u8],
     exp_data: &mut [[u8; NODE_SIZE]],
@@ -282,8 +281,8 @@ pub fn load_parents_exp_from_disk<H: Hasher>(
     file: &File,
     store: &DiskStore<H::Domain>,
 ) {
-    let start = node as usize * DEGREE * 4;
-    file.read_exact_at(cache_parents, start)?;
+    let start = node * DEGREE * 4;
+    file.read_exact_at(cache_parents, start as u64).unwrap();
 
     // fill all relationship, i = 0 ~ 14
     for (i, cache) in cache_parents.chunks(4).enumerate() {
@@ -510,6 +509,19 @@ where
                     ..self.base_graph().degree() + self.expansion_degree()],
             );
         }
+        Ok(())
+    }
+
+    // 20200610 add by gyl
+    #[inline]
+    fn parents_by_gyl(&self, node: usize, parents: &mut [u8]) -> Result<()> {
+        self.base_graph().parents_by_gyl(node, &mut parents[..BASE_DEGREE * 4])?;
+
+        self.generate_expanded_parents_by_gyl(
+            node, 
+            &mut parents[BASE_DEGREE * 4..DEGREE * 4],
+        );
+
         Ok(())
     }
 

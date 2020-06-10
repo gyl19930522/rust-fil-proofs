@@ -29,6 +29,7 @@ use storage_proofs_core::{
     util::NODE_SIZE,
 };
 use typenum::{U11, U2, U8};
+use log::info;
 
 use super::{
     challenges::LayerChallenges,
@@ -301,6 +302,7 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
         let layer_size = graph.size() * NODE_SIZE;
         // NOTE: this means we currently keep 2x sector size around, to improve speed.
         let layer_labels_ptr = Arc::new(Mutex::new(vec![0u8; layer_size]));
+        let layer_labels_local = layer_labels_ptr.lock();
 
         for layer in 1..=layers {
             if layer == 1 {
@@ -322,7 +324,7 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
                 DiskStore::new_from_slice_with_config(
                     graph.size(),
                     Tree::Arity::to_usize(),
-                    layer_labels_ptr.as_ref(),
+                    layer_labels_local.as_ref(),
                     layer_config.clone(),
                 )?;
             info!(

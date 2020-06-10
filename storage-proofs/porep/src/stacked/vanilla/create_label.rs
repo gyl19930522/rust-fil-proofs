@@ -140,6 +140,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
     info!("generating layer: {}", layer);
 
     let replica_id_ptr = Arc::new(replica_id.clone());
+    let data_path_ptr = Arc::new(data_path.clone());
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
@@ -225,7 +226,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
         let mut exp_labels_local = exp_labels_ptr_2.lock();
 
         let file_index = File::open("/home/parents_index.dat").unwrap();
-        let file_last_layer = File::open(data_path).unwrap();
+        let file_last_layer = File::open(data_path_ptr.as_ref()).unwrap();
 
         let mut index_cache = [0u8; 14 * U32SIZE];
 

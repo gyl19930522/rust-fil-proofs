@@ -324,11 +324,10 @@ fn read_exp_node_by_gyl<'a>(i: usize, data: &'a [u8]) -> &'a [u8] {
 
 // 20200610 add by gyl
 pub fn finish_parents_labels(
-    start: usize,
     parents_index: &[u32], 
     data: &mut [u8], 
     hasher: &mut Sha256,
-) {
+) -> [u8; 32] {
     let parents = [
         read_node_by_gyl(0, parents_index, data),
         read_node_by_gyl(1, parents_index, data),
@@ -345,17 +344,16 @@ pub fn finish_parents_labels(
     hasher.input(&parents);
     hasher.input(&parents);
 
-    hasher.finish_with_into_by_gyl(parents[0], data[start..start + NODE_SIZE].as_mut());
+    hasher.finish_with(parents[0])
 }
 
 // 20200610 add by gyl
 pub fn finish_exp_parents_labels(
-    start: usize, 
     parents_index: &[u32], 
     labels: &mut [u8], 
     exp_labels: &[u8], 
     hasher: &mut Sha256,
-) {
+) -> [u8; 32] {
     let parents = [
         read_node_by_gyl(0, parents_index, labels),
         read_node_by_gyl(1, parents_index, labels),
@@ -377,7 +375,7 @@ pub fn finish_exp_parents_labels(
     hasher.input(&parents);
     hasher.input(&parents[..8]);
 
-    hasher.finish_with_into_by_gyl(&parents[8], labels[start..start + NODE_SIZE].as_mut());
+    hasher.finish_with(&parents[8])
 }
 
 /*

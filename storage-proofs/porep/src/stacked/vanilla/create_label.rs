@@ -61,15 +61,12 @@ pub fn dual_threads_layer_1_by_gyl<H: 'static + Hasher>(
             buffer[..4].copy_from_slice(&1u32.to_be_bytes());
             hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]]);
 
-            let start = node * NODE_SIZE;
-
-            if node > 0 {
+            let hash = if node > 0 {
                 finish_parents_labels(
-                    start, 
                     parent_index_local.as_ref(), 
                     layer_labels_local.as_mut(), 
                     &mut hasher,
-                );
+                )
                 /*
                 unsafe {
                     let ps = [
@@ -90,10 +87,15 @@ pub fn dual_threads_layer_1_by_gyl<H: 'static + Hasher>(
                 }  
                 */                
             } else {
-                hasher.finish_into_by_gyl(layer_labels_local[0..NODE_SIZE].as_mut());
-            }
+                hasher.finish()
+            };
 
-            layer_labels_local[start + NODE_SIZE - 1] &= 0b0011_1111;
+            let start = data_at_node_offset(node);
+            let end = start + NODE_SIZE;
+            layer_labels_local[start..end].copy_from_slice(&hash[..]);
+            // strip last two bits, to ensure result is in Fr.
+            layer_labels_local[end - 1] &= 0b0011_1111;
+
             finish_node_1.store(node as isize, Ordering::SeqCst);
         }
     });
@@ -165,22 +167,19 @@ pub fn dual_threads_layer_n_by_gyl<H: 'static + Hasher>(
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
 
-            let start = node * NODE_SIZE;
-
             let mut hasher = Sha256::new();
             let mut buffer = [0u8; 32];
             buffer[..4].copy_from_slice(&(layer as u32).to_be_bytes());
             buffer[4..12].copy_from_slice(&(node as u64).to_be_bytes());
             hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]][..]);
 
-            if node > 0 {
+            let hash = if node > 0 {
                 finish_exp_parents_labels(
-                    start,
                     parent_index_local.as_ref(), 
                     layer_labels_local.as_mut(),
                     exp_labels_local.as_ref(),
                     &mut hasher,
-                );
+                )
                 /*
                 unsafe {
                     let ps = [
@@ -206,10 +205,15 @@ pub fn dual_threads_layer_n_by_gyl<H: 'static + Hasher>(
                 }
                 */
             } else {
-                hasher.finish_into_by_gyl(layer_labels_local[0..NODE_SIZE].as_mut());
-            }
+                hasher.finish()
+            };
 
-            layer_labels_local[start + NODE_SIZE - 1] &= 0b0011_1111;
+            let start = data_at_node_offset(node);
+            let end = start + NODE_SIZE;
+            layer_labels_local[start..end].copy_from_slice(&hash[..]);
+            // strip last two bits, to ensure result is in Fr.
+            layer_labels_local[end - 1] &= 0b0011_1111;
+            
             finish_node_1.store(node as isize, Ordering::SeqCst);
         }
     });

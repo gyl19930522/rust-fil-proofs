@@ -7,7 +7,7 @@ use core_affinity;
 use std::sync::{Arc, atomic::{AtomicUsize, AtomicIsize, Ordering}};
 use std::thread;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::cmp::min;
 use sha2raw::Sha256;
 use parking_lot::Mutex;
@@ -29,7 +29,8 @@ pub fn dual_threads_layer_1_by_gyl<H: Hasher>(
 ) {
     info!("generating layer: 1");
 
-    let replica_id_ptr = Arc::new(replica_id.clone());
+    let rep_id = replica_id.clone();
+    let replica_id_ptr = Arc::new(rep_id);
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
@@ -139,7 +140,8 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
 ) {
     info!("generating layer: {}", layer);
 
-    let replica_id_ptr = Arc::new(replica_id.clone());
+    let rep_id = replica_id.clone();
+    let replica_id_ptr = Arc::new(rep_id);
     let data_path_ptr = Arc::new(data_path.clone());
 
     let layer_labels_ptr_1 = layer_labels_ptr.clone();

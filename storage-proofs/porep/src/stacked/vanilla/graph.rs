@@ -375,7 +375,7 @@ pub fn finish_exp_parents_labels(
     hasher.input(&parents);
     hasher.input(&parents[..8]);
 
-    hasher.finish_with_into_by_gyl(&parents[8], data[start..start + NODE_SIZE].as_mut());
+    hasher.finish_with_into_by_gyl(&parents[8], labels[start..start + NODE_SIZE].as_mut());
 }
 
 /*

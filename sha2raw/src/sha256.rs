@@ -27,12 +27,6 @@ impl Sha256 {
         Sha256::default()
     }
 
-    // 20200608 add by gyl
-    pub fn reset(&mut self) {
-        self.len = 0;
-        self.state.copy_from_slice(&H256);
-    }
-
     pub fn digest(blocks: &[&[u8]]) -> [u8; 32] {
         let mut sha = Sha256::new();
         sha.input(blocks);

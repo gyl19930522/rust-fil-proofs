@@ -167,8 +167,8 @@ impl ParentCache {
 
         info!("cache filled");
         
-        let mut f = File::create("/home/parents_nodes.dat")?;
-        f.write_all_at(&cache, 0)?;
+        let file = File::create("/home/parents_nodes.dat")?;
+        file.write_all_at(&cache, 0)?;
         info!("parents file writed");
 
         Ok(())

@@ -53,12 +53,10 @@ pub fn dual_threads_layer_1_by_gyl<H: 'static + Hasher>(
         let mut layer_labels_local = layer_labels_ptr_1.lock();
         let parent_index_local = parent_index_ptr_1.lock();
 
-        let mut hasher = Sha256::new();
-
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
 
-            hasher.reset();
+            let mut hasher = Sha256::new();
             let mut buffer = [0u8; 32];
             buffer[..4].copy_from_slice(&1u32.to_be_bytes());
             hasher.input(&[AsRef::<[u8]>::as_ref(replica_id_ptr.as_ref()), &buffer[..]]);
@@ -163,15 +161,13 @@ pub fn dual_threads_layer_n_by_gyl<H: 'static + Hasher>(
         let mut layer_labels_local = layer_labels_ptr_1.lock();
         let parent_index_local = parent_index_ptr_1.lock();
         let exp_labels_local = exp_labels_ptr_1.lock();
-
-        let mut hasher = Sha256::new();
         
         for node in 0..g_size {
             while pending_node_1.load(Ordering::SeqCst) < node + 1 {};
 
             let start = node * NODE_SIZE;
 
-            hasher.reset();
+            let mut hasher = Sha256::new();
             let mut buffer = [0u8; 32];
             buffer[..4].copy_from_slice(&(layer as u32).to_be_bytes());
             buffer[4..12].copy_from_slice(&(node as u64).to_be_bytes());

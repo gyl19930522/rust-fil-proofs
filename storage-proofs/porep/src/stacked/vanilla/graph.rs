@@ -347,7 +347,7 @@ where
         */
 
         info!("using parents disk storage");
-        parent_disk_by_gyl(nodes as u32, &res)?;
+        parent_disk_by_gyl(nodes as u32, &res);
 
         Ok(res)
     }

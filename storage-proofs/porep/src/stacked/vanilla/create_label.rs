@@ -129,7 +129,7 @@ pub fn dual_threads_layer_n_by_gyl<H: Hasher>(
     let layer_labels_ptr_2 = layer_labels_ptr_1.clone();
     let layer_labels_ptr_3 = layer_labels_ptr_2.clone();
 
-    let store_ptr = Arc::new(Clone::clone(store));
+    let store_ptr = Arc::new(store.clone());
 
     let base_parents_addr_1 = Arc::new(Mutex::new([0usize; 6]));
     let base_parents_addr_2 = base_parents_addr_1.clone();

@@ -50,10 +50,11 @@ where
 
     const NODE_MIB: u32 = (1024 * 1024) / NODE_SIZE as u32;
     const NODE_GIB: u32 = (1024 * 1024 * 1024) / NODE_SIZE as u32;
-    ensure!(
+
+    assert!(
         ((cache_entries == 512 * NODE_MIB) || (cache_entries == 32 * NODE_GIB) || (cache_entries == 64 * NODE_GIB)),
         "Cache is only available for 512MiB, 32GiB and 64GiB sectors"
-    ).unwrap();
+    );
 
     info!("using parent_cache[{}]", cache_entries);
 

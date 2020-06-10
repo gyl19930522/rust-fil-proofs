@@ -29,7 +29,6 @@ use storage_proofs_core::{
     util::NODE_SIZE,
 };
 use typenum::{U11, U2, U8};
-use log::info;
 
 use super::{
     challenges::LayerChallenges,
@@ -306,9 +305,9 @@ impl<'a, Tree: 'static + MerkleTreeTrait, G: 'static + Hasher> StackedDrg<'a, Tr
 
         for layer in 1..=layers {
             if layer == 1 {
-                dual_threads_layer_1_by_gyl(graph.size(), replica_id, &layer_labels_ptr);
+                dual_threads_layer_1_by_gyl::<Tree::Hasher>(graph.size(), replica_id, &layer_labels_ptr);
             } else {
-                dual_threads_layer_n_by_gyl(layer, layers, graph.size(), replica_id, &layer_labels_ptr, &labels[layer - 1]);
+                dual_threads_layer_n_by_gyl::<Tree::Hasher>(layer, layers, graph.size(), replica_id, &layer_labels_ptr, &labels[layer - 1]);
             }
 
             info!("  setting exp parents");
